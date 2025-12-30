@@ -1,8 +1,12 @@
-# ビルドステージ
-FROM golang:1.21-alpine AS builder
+# ビルドステージ（Debianベース）
+FROM golang:1.21-bookworm AS builder
 
 # SQLite用のビルド環境
-RUN apk add --no-cache gcc musl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libc6-dev \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
@@ -16,11 +20,15 @@ COPY . .
 # CGO有効でビルド（SQLite対応）
 RUN CGO_ENABLED=1 GOOS=linux go build -o main .
 
-# 実行ステージ
-FROM alpine:latest
+# 実行ステージ（軽量Debianベース）
+FROM debian:bookworm-slim
 
 # 実行時に必要なライブラリ
-RUN apk add --no-cache ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # タイムゾーン設定
 ENV TZ=Asia/Tokyo
