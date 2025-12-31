@@ -2,6 +2,8 @@ package models
 
 import (
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // User はユーザー情報を表す（共通DBに保存）
@@ -9,6 +11,7 @@ type User struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Name      string    `gorm:"not null" json:"name"`
 	Email     string    `gorm:"unique" json:"email,omitempty"`
+	Password  string    `gorm:"-" json:"-"` // JSONレスポンスには含めない
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -16,6 +19,22 @@ type User struct {
 // TableName はテーブル名を指定
 func (User) TableName() string {
 	return "users"
+}
+
+// SetPassword はパスワードをハッシュ化して設定する
+func (u *User) SetPassword(password string) error {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	u.Password = string(hashedPassword)
+	return nil
+}
+
+// CheckPassword はパスワードが正しいかを検証する
+func (u *User) CheckPassword(password string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
+	return err == nil
 }
 
 // CreateUser は新規ユーザーを作成する
@@ -28,6 +47,34 @@ func CreateUser(name, email string) (*User, error) {
 	user := &User{
 		Name:  name,
 		Email: email,
+	}
+
+	if err := db.Create(user).Error; err != nil {
+		return nil, err
+	}
+
+	// ユーザー専用DBを初期化（ディレクトリ作成とマイグレーション）
+	if _, err := GetUserDB(user.ID); err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}
+
+// CreateUserWithPassword はパスワード付きで新規ユーザーを作成する
+func CreateUserWithPassword(name, email, password string) (*User, error) {
+	db, err := GetAppDB()
+	if err != nil {
+		return nil, err
+	}
+
+	user := &User{
+		Name:  name,
+		Email: email,
+	}
+
+	if err := user.SetPassword(password); err != nil {
+		return nil, err
 	}
 
 	if err := db.Create(user).Error; err != nil {

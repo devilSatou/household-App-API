@@ -36,6 +36,24 @@ func main() {
 
 	// API v1
 	v1 := r.Group("/api/v1")
+
+	// 認証エンドポイント（認証不要）
+	auth := v1.Group("/auth")
+	{
+		auth.POST("/register", handlers.Register)
+		auth.POST("/login", handlers.Login)
+	}
+
+	// 認証が必要な認証エンドポイント
+	authRequired := v1.Group("/auth")
+	authRequired.Use(middleware.AuthRequired())
+	{
+		authRequired.GET("/me", handlers.GetProfile)
+		authRequired.PUT("/me", handlers.UpdateProfile)
+		authRequired.PUT("/password", handlers.ChangePassword)
+	}
+
+	// その他のAPIエンドポイント（開発用：UserContext使用）
 	v1.Use(middleware.UserContext())
 	{
 		// Transactions
