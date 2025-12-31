@@ -10,6 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+
+	"household-app/models"
 )
 
 // Claims はJWTのクレームを表す構造体
@@ -111,22 +113,81 @@ func AuthRequired() gin.HandlerFunc {
 			return
 		}
 
+		// ユーザーDBを取得
+		db, err := models.GetUserDB(claims.UserID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user database"})
+			c.Abort()
+			return
+		}
+
 		// コンテキストにユーザー情報を設定
 		c.Set("userID", claims.UserID)
 		c.Set("email", claims.Email)
+		c.Set("userDB", db)
 
 		c.Next()
 	}
 }
 
-// GetUserID はコンテキストからユーザーIDを取得するヘルパー関数
-func GetUserID(c *gin.Context) (uint, bool) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		return 0, false
+// UserContext はユーザーDBをContextに注入するミドルウェア
+// 開発用: 環境変数またはヘッダーからユーザーIDを取得
+// 本番ではAuthRequired()を使用してください
+func UserContext() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var userID uint
+
+		// 1. ヘッダーから取得（開発用）
+		if idStr := c.GetHeader("X-User-ID"); idStr != "" {
+			if id, err := strconv.ParseUint(idStr, 10, 32); err == nil {
+				userID = uint(id)
+			}
+		}
+
+		// 2. 環境変数から取得（フォールバック）
+		if userID == 0 {
+			if idStr := os.Getenv("USER_ID"); idStr != "" {
+				if id, err := strconv.ParseUint(idStr, 10, 32); err == nil {
+					userID = uint(id)
+				}
+			}
+		}
+
+		// 3. デフォルトユーザー（開発用）
+		if userID == 0 {
+			userID = 1
+			// デフォルトユーザーが存在しない場合は作成
+			if _, err := models.GetUserByID(userID); err != nil {
+				if _, err := models.CreateUser("Default User", ""); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create default user"})
+					c.Abort()
+					return
+				}
+			}
+		}
+
+		// ユーザーDBを取得
+		db, err := models.GetUserDB(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user database"})
+			c.Abort()
+			return
+		}
+
+		// Contextに保存
+		c.Set("userID", userID)
+		c.Set("userDB", db)
+
+		c.Next()
 	}
-	id, ok := userID.(uint)
-	return id, ok
+}
+
+// GetUserID はContextからユーザーIDを取得する
+func GetUserID(c *gin.Context) uint {
+	if id, exists := c.Get("userID"); exists {
+		return id.(uint)
+	}
+	return 0
 }
 
 // GetUserEmail はコンテキストからメールアドレスを取得するヘルパー関数

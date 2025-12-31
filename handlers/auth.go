@@ -5,21 +5,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
 	"household-app/middleware"
 	"household-app/models"
 )
-
-// AuthHandler は認証関連のハンドラー
-type AuthHandler struct {
-	DB *gorm.DB
-}
-
-// NewAuthHandler はAuthHandlerを作成する
-func NewAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{DB: db}
-}
 
 // RegisterRequest はユーザー登録リクエストの構造体
 type RegisterRequest struct {
@@ -42,7 +31,7 @@ type AuthResponse struct {
 
 // Register はユーザー登録を処理する
 // POST /api/v1/auth/register
-func (h *AuthHandler) Register(c *gin.Context) {
+func Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -55,8 +44,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	// メールアドレスの重複チェック
-	var existingUser models.User
-	if err := h.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+	if _, err := models.GetUserByEmail(req.Email); err == nil {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "Email already registered",
 		})
@@ -64,19 +52,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// ユーザーを作成
-	user := &models.User{
-		Email: req.Email,
-		Name:  strings.TrimSpace(req.Name),
-	}
-
-	if err := user.SetPassword(req.Password); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to hash password",
-		})
-		return
-	}
-
-	if err := h.DB.Create(user).Error; err != nil {
+	user, err := models.CreateUserWithPassword(strings.TrimSpace(req.Name), req.Email, req.Password)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to create user",
 		})
@@ -100,7 +77,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // Login はユーザーログインを処理する
 // POST /api/v1/auth/login
-func (h *AuthHandler) Login(c *gin.Context) {
+func Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -113,8 +90,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	// ユーザーを検索
-	var user models.User
-	if err := h.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
+	user, err := models.GetUserByEmail(req.Email)
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "Invalid email or password",
 		})
@@ -140,23 +117,23 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, AuthResponse{
 		Token: token,
-		User:  &user,
+		User:  user,
 	})
 }
 
 // GetProfile は現在のユーザー情報を取得する
 // GET /api/v1/auth/me
-func (h *AuthHandler) GetProfile(c *gin.Context) {
-	userID, exists := middleware.GetUserID(c)
-	if !exists {
+func GetProfile(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "User not found in context",
 		})
 		return
 	}
 
-	var user models.User
-	if err := h.DB.First(&user, userID).Error; err != nil {
+	user, err := models.GetUserByID(userID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "User not found",
 		})
@@ -175,9 +152,9 @@ type UpdateProfileRequest struct {
 
 // UpdateProfile は現在のユーザー情報を更新する
 // PUT /api/v1/auth/me
-func (h *AuthHandler) UpdateProfile(c *gin.Context) {
-	userID, exists := middleware.GetUserID(c)
-	if !exists {
+func UpdateProfile(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "User not found in context",
 		})
@@ -192,8 +169,8 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	if err := h.DB.First(&user, userID).Error; err != nil {
+	user, err := models.GetUserByID(userID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "User not found",
 		})
@@ -205,7 +182,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		user.Name = strings.TrimSpace(req.Name)
 	}
 
-	if err := h.DB.Save(&user).Error; err != nil {
+	if err := user.Update(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update user",
 		})
@@ -225,9 +202,9 @@ type ChangePasswordRequest struct {
 
 // ChangePassword は現在のユーザーのパスワードを変更する
 // PUT /api/v1/auth/password
-func (h *AuthHandler) ChangePassword(c *gin.Context) {
-	userID, exists := middleware.GetUserID(c)
-	if !exists {
+func ChangePassword(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "User not found in context",
 		})
@@ -242,8 +219,8 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	if err := h.DB.First(&user, userID).Error; err != nil {
+	user, err := models.GetUserByID(userID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "User not found",
 		})
@@ -266,7 +243,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.DB.Save(&user).Error; err != nil {
+	if err := user.Update(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update password",
 		})

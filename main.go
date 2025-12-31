@@ -5,8 +5,6 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	"household-app/handlers"
 	"household-app/middleware"
@@ -14,60 +12,68 @@ import (
 )
 
 func main() {
-	// データベースパスを取得
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "./data/household.db"
-	}
-
-	// データベース接続
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
-
-	// マイグレーション実行
-	if err := db.AutoMigrate(&models.User{}); err != nil {
-		log.Fatal("Failed to migrate database:", err)
-	}
-
 	// Ginモード設定
-	ginMode := os.Getenv("GIN_MODE")
-	if ginMode != "" {
-		gin.SetMode(ginMode)
+	if os.Getenv("GIN_MODE") == "release" {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// ルーター初期化
+	// 共通DB初期化
+	if _, err := models.GetAppDB(); err != nil {
+		log.Fatalf("Failed to initialize app database: %v", err)
+	}
+	defer models.CloseAllDBs()
+
+	// ルーター作成
 	r := gin.Default()
+
+	// ミドルウェア
+	r.Use(middleware.CORS())
 
 	// ヘルスチェック
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-		})
+		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// ハンドラー初期化
-	authHandler := handlers.NewAuthHandler(db)
+	// API v1
+	v1 := r.Group("/api/v1")
 
-	// APIルート
-	api := r.Group("/api/v1")
+	// 認証エンドポイント（認証不要）
+	auth := v1.Group("/auth")
 	{
-		// 認証不要のエンドポイント
-		auth := api.Group("/auth")
-		{
-			auth.POST("/register", authHandler.Register)
-			auth.POST("/login", authHandler.Login)
-		}
+		auth.POST("/register", handlers.Register)
+		auth.POST("/login", handlers.Login)
+	}
 
-		// 認証が必要なエンドポイント
-		authRequired := api.Group("/auth")
-		authRequired.Use(middleware.AuthRequired())
-		{
-			authRequired.GET("/me", authHandler.GetProfile)
-			authRequired.PUT("/me", authHandler.UpdateProfile)
-			authRequired.PUT("/password", authHandler.ChangePassword)
-		}
+	// 認証が必要な認証エンドポイント
+	authRequired := v1.Group("/auth")
+	authRequired.Use(middleware.AuthRequired())
+	{
+		authRequired.GET("/me", handlers.GetProfile)
+		authRequired.PUT("/me", handlers.UpdateProfile)
+		authRequired.PUT("/password", handlers.ChangePassword)
+	}
+
+	// その他のAPIエンドポイント（開発用：UserContext使用）
+	v1.Use(middleware.UserContext())
+	{
+		// Transactions
+		v1.GET("/transactions", handlers.ListTransactions)
+		v1.POST("/transactions", handlers.CreateTransaction)
+		v1.GET("/transactions/:id", handlers.GetTransaction)
+		v1.PUT("/transactions/:id", handlers.UpdateTransaction)
+		v1.DELETE("/transactions/:id", handlers.DeleteTransaction)
+
+		// Categories
+		v1.GET("/categories", handlers.ListCategories)
+		v1.POST("/categories", handlers.CreateCategory)
+
+		// Summary
+		v1.GET("/summary/monthly", handlers.GetMonthlySummary)
+		v1.GET("/summary/category", handlers.GetCategorySummary)
+		v1.GET("/summary/yearly", handlers.GetYearlySummary)
+
+		// Export
+		v1.GET("/export/csv", handlers.ExportCSV)
 	}
 
 	// ポート設定
@@ -78,6 +84,6 @@ func main() {
 
 	log.Printf("Server starting on port %s", port)
 	if err := r.Run(":" + port); err != nil {
-		log.Fatal("Failed to start server:", err)
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }
