@@ -6,7 +6,7 @@
 
 - **ベースURL**: `http://localhost:8080`
 - **APIバージョン**: v1
-- **認証**: 現在は `X-User-ID` ヘッダーまたは環境変数 `USER_ID` で指定（JWT認証は今後実装予定）
+- **認証**: JWT（JSON Web Token）による認証
 
 ---
 
@@ -17,7 +17,8 @@
 | ヘッダー | 必須 | 説明 |
 |----------|------|------|
 | `Content-Type` | POST/PUT時 | `application/json` |
-| `X-User-ID` | 任意 | ユーザーID（指定しない場合はデフォルトユーザー1） |
+| `Authorization` | 認証が必要なエンドポイント | `Bearer <JWT_TOKEN>` 形式 |
+| `X-User-ID` | 開発用（任意） | ユーザーID（開発環境でのみ使用、指定しない場合はデフォルトユーザー1） |
 
 ### レスポンス形式
 
@@ -47,7 +48,9 @@
 | 200 | 成功 |
 | 201 | 作成成功 |
 | 400 | リクエスト不正 |
+| 401 | 認証エラー |
 | 404 | リソースが見つからない |
+| 409 | 競合エラー（例: メールアドレス重複） |
 | 500 | サーバーエラー |
 
 ---
@@ -69,6 +72,184 @@ curl http://localhost:8080/health
 ```json
 {
   "status": "ok"
+}
+```
+
+---
+
+## 認証（Authentication）
+
+### POST /api/v1/auth/register
+
+新規ユーザーを登録します。
+
+**リクエストボディ**:
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `email` | string | 必須 | メールアドレス（一意である必要がある） |
+| `password` | string | 必須 | パスワード（8文字以上） |
+| `name` | string | 必須 | ユーザー名 |
+
+**リクエスト例**:
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "securepass123",
+    "name": "山田太郎"
+  }'
+```
+
+**レスポンス例** (201 Created):
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "name": "山田太郎",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z"
+  }
+}
+```
+
+---
+
+### POST /api/v1/auth/login
+
+ユーザーログインしてJWTトークンを取得します。
+
+**リクエストボディ**:
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `email` | string | 必須 | メールアドレス |
+| `password` | string | 必須 | パスワード |
+
+**リクエスト例**:
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "password": "securepass123"
+  }'
+```
+
+**レスポンス例** (200 OK):
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "name": "山田太郎",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z"
+  }
+}
+```
+
+---
+
+### GET /api/v1/auth/me
+
+現在のユーザー情報を取得します（要認証）。
+
+**リクエストヘッダー**:
+- `Authorization: Bearer <JWT_TOKEN>`
+
+**リクエスト例**:
+```bash
+curl http://localhost:8080/api/v1/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**レスポンス例** (200 OK):
+```json
+{
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "name": "山田太郎",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T12:00:00Z"
+  }
+}
+```
+
+---
+
+### PUT /api/v1/auth/me
+
+現在のユーザー情報を更新します（要認証）。
+
+**リクエストヘッダー**:
+- `Authorization: Bearer <JWT_TOKEN>`
+
+**リクエストボディ**:
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `name` | string | 任意 | ユーザー名 |
+
+**リクエスト例**:
+```bash
+curl -X PUT http://localhost:8080/api/v1/auth/me \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "name": "山田花子"
+  }'
+```
+
+**レスポンス例** (200 OK):
+```json
+{
+  "user": {
+    "id": 1,
+    "email": "user@example.com",
+    "name": "山田花子",
+    "created_at": "2024-01-15T12:00:00Z",
+    "updated_at": "2024-01-15T13:00:00Z"
+  }
+}
+```
+
+---
+
+### PUT /api/v1/auth/password
+
+現在のユーザーのパスワードを変更します（要認証）。
+
+**リクエストヘッダー**:
+- `Authorization: Bearer <JWT_TOKEN>`
+
+**リクエストボディ**:
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `current_password` | string | 必須 | 現在のパスワード |
+| `new_password` | string | 必須 | 新しいパスワード（8文字以上） |
+
+**リクエスト例**:
+```bash
+curl -X PUT http://localhost:8080/api/v1/auth/password \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "current_password": "securepass123",
+    "new_password": "newsecurepass456"
+  }'
+```
+
+**レスポンス例** (200 OK):
+```json
+{
+  "message": "Password changed successfully"
 }
 ```
 
@@ -563,11 +744,33 @@ ID,日付,種別,カテゴリ,金額,メモ,作成日時
 }
 ```
 
+### 401 Unauthorized
+
+```json
+{
+  "error": "Invalid or expired token"
+}
+```
+
+```json
+{
+  "error": "Invalid email or password"
+}
+```
+
 ### 404 Not Found
 
 ```json
 {
   "error": "Transaction not found"
+}
+```
+
+### 409 Conflict
+
+```json
+{
+  "error": "Email already registered"
 }
 ```
 
