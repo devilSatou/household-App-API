@@ -40,22 +40,35 @@ data/
 
 ## API エンドポイント
 
+詳細は `docs/API_SPECIFICATION.md` を参照
+
 ```
 GET    /health                       # ヘルスチェック
 
+# 認証（Authentication）
+POST   /api/v1/auth/register         # ユーザー登録
+POST   /api/v1/auth/login            # ログイン
+GET    /api/v1/auth/me               # プロファイル取得（要認証）
+PUT    /api/v1/auth/me               # プロファイル更新（要認証）
+PUT    /api/v1/auth/password         # パスワード変更（要認証）
+
+# 収支記録（Transactions）※開発環境ではX-User-IDヘッダーで認証可
 GET    /api/v1/transactions          # 一覧（ページネーション対応）
 POST   /api/v1/transactions          # 新規作成
 GET    /api/v1/transactions/:id      # 詳細
 PUT    /api/v1/transactions/:id      # 更新
 DELETE /api/v1/transactions/:id      # 削除
 
+# カテゴリ（Categories）
 GET    /api/v1/categories            # カテゴリ一覧
 POST   /api/v1/categories            # カテゴリ追加
 
+# 集計（Summary）
 GET    /api/v1/summary/monthly       # 月次集計
 GET    /api/v1/summary/category      # カテゴリ別集計
 GET    /api/v1/summary/yearly        # 年次集計
 
+# エクスポート（Export）
 GET    /api/v1/export/csv            # CSV出力
 ```
 
@@ -68,7 +81,7 @@ GET    /api/v1/export/csv            # CSV出力
 
 ## 未実装（今後追加予定）
 
-- [ ] 認証機能（JWT）
+- [x] 認証機能（JWT）✅ 実装済み
 - [ ] フロントエンド詳細実装
 - [ ] テストコード
 - [ ] CI/CD設定
@@ -94,3 +107,5 @@ docker-compose --profile dev up
 | PORT | サーバーポート | 8080 |
 | DB_PATH | 共通DBパス | data/app.db |
 | USER_DB_BASE_PATH | ユーザーDBベースパス | data/users |
+| JWT_SECRET | JWT署名用シークレットキー | default-secret-key-change-in-production |
+| JWT_EXPIRY_HOURS | JWTトークンの有効期限（時間） | 24 |

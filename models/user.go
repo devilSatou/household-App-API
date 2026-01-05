@@ -11,7 +11,7 @@ type User struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Name      string    `gorm:"not null" json:"name"`
 	Email     string    `gorm:"unique" json:"email,omitempty"`
-	Password  string    `gorm:"-" json:"-"` // JSONレスポンスには含めない
+	Password  string    `gorm:"column:password" json:"-"` // JSONレスポンスには含めない
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
