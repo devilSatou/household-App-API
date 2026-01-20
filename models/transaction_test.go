@@ -304,3 +304,200 @@ func TestTransactionRepository_Delete(t *testing.T) {
 		t.Error("Expected error when getting deleted transaction, got nil")
 	}
 }
+
+func TestTransactionRepository_GetMonthlySummary(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB(t)
+
+	user := CreateTestUserWithCategories(t, "Test User", "test@example.com")
+	expenseCategory := GetTestCategory(t, user.ID, "expense")
+	incomeCategory := GetTestCategory(t, user.ID, "income")
+
+	repo := NewTransactionRepository(user.ID)
+
+	// テストデータを作成（2024年6月）
+	testDate := time.Date(2024, 6, 15, 0, 0, 0, 0, time.Local)
+	transactions := []Transaction{
+		{CategoryID: incomeCategory.ID, Amount: 300000, Type: TypeIncome, Date: testDate, Memo: "給与"},
+		{CategoryID: expenseCategory.ID, Amount: 50000, Type: TypeExpense, Date: testDate, Memo: "家賃"},
+		{CategoryID: expenseCategory.ID, Amount: 30000, Type: TypeExpense, Date: testDate, Memo: "食費"},
+	}
+
+	for i := range transactions {
+		if err := repo.Create(&transactions[i]); err != nil {
+			t.Fatalf("Failed to create transaction: %v", err)
+		}
+	}
+
+	// 月次集計を取得
+	summary, err := repo.GetMonthlySummary(2024, 6)
+	if err != nil {
+		t.Fatalf("Failed to get monthly summary: %v", err)
+	}
+
+	if summary.Year != 2024 {
+		t.Errorf("Expected year 2024, got %d", summary.Year)
+	}
+
+	if summary.Month != 6 {
+		t.Errorf("Expected month 6, got %d", summary.Month)
+	}
+
+	if summary.Income != 300000 {
+		t.Errorf("Expected income 300000, got %d", summary.Income)
+	}
+
+	if summary.Expense != 80000 {
+		t.Errorf("Expected expense 80000, got %d", summary.Expense)
+	}
+
+	if summary.Balance != 220000 {
+		t.Errorf("Expected balance 220000, got %d", summary.Balance)
+	}
+}
+
+func TestTransactionRepository_GetMonthlySummary_EmptyMonth(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB(t)
+
+	user := CreateTestUserWithCategories(t, "Test User", "test@example.com")
+	repo := NewTransactionRepository(user.ID)
+
+	// データのない月の集計
+	summary, err := repo.GetMonthlySummary(2024, 1)
+	if err != nil {
+		t.Fatalf("Failed to get monthly summary: %v", err)
+	}
+
+	if summary.Income != 0 {
+		t.Errorf("Expected income 0, got %d", summary.Income)
+	}
+
+	if summary.Expense != 0 {
+		t.Errorf("Expected expense 0, got %d", summary.Expense)
+	}
+
+	if summary.Balance != 0 {
+		t.Errorf("Expected balance 0, got %d", summary.Balance)
+	}
+}
+
+func TestTransactionRepository_GetCategorySummary(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB(t)
+
+	user := CreateTestUserWithCategories(t, "Test User", "test@example.com")
+	expenseCategory := GetTestCategory(t, user.ID, "expense")
+	incomeCategory := GetTestCategory(t, user.ID, "income")
+
+	repo := NewTransactionRepository(user.ID)
+
+	// テストデータを作成
+	testDate := time.Date(2024, 6, 15, 0, 0, 0, 0, time.Local)
+	transactions := []Transaction{
+		{CategoryID: incomeCategory.ID, Amount: 300000, Type: TypeIncome, Date: testDate, Memo: "給与"},
+		{CategoryID: expenseCategory.ID, Amount: 50000, Type: TypeExpense, Date: testDate, Memo: "支出1"},
+		{CategoryID: expenseCategory.ID, Amount: 30000, Type: TypeExpense, Date: testDate, Memo: "支出2"},
+	}
+
+	for i := range transactions {
+		if err := repo.Create(&transactions[i]); err != nil {
+			t.Fatalf("Failed to create transaction: %v", err)
+		}
+	}
+
+	// カテゴリ別集計を取得
+	startDate := time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local)
+	endDate := time.Date(2024, 6, 30, 23, 59, 59, 0, time.Local)
+
+	summaries, err := repo.GetCategorySummary(startDate, endDate)
+	if err != nil {
+		t.Fatalf("Failed to get category summary: %v", err)
+	}
+
+	if len(summaries) == 0 {
+		t.Error("Expected at least one category summary")
+	}
+
+	// 支出カテゴリの合計を確認
+	var expenseTotal int
+	for _, s := range summaries {
+		if s.Type == TypeExpense {
+			expenseTotal += s.Total
+		}
+	}
+
+	if expenseTotal != 80000 {
+		t.Errorf("Expected expense total 80000, got %d", expenseTotal)
+	}
+}
+
+func TestTransactionRepository_GetYearlySummary(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB(t)
+
+	user := CreateTestUserWithCategories(t, "Test User", "test@example.com")
+	expenseCategory := GetTestCategory(t, user.ID, "expense")
+	incomeCategory := GetTestCategory(t, user.ID, "income")
+
+	repo := NewTransactionRepository(user.ID)
+
+	// 複数月のテストデータを作成（2024年）
+	transactions := []Transaction{
+		// 1月
+		{CategoryID: incomeCategory.ID, Amount: 300000, Type: TypeIncome, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.Local), Memo: "1月給与"},
+		{CategoryID: expenseCategory.ID, Amount: 100000, Type: TypeExpense, Date: time.Date(2024, 1, 20, 0, 0, 0, 0, time.Local), Memo: "1月支出"},
+		// 2月
+		{CategoryID: incomeCategory.ID, Amount: 300000, Type: TypeIncome, Date: time.Date(2024, 2, 15, 0, 0, 0, 0, time.Local), Memo: "2月給与"},
+		{CategoryID: expenseCategory.ID, Amount: 150000, Type: TypeExpense, Date: time.Date(2024, 2, 20, 0, 0, 0, 0, time.Local), Memo: "2月支出"},
+	}
+
+	for i := range transactions {
+		if err := repo.Create(&transactions[i]); err != nil {
+			t.Fatalf("Failed to create transaction: %v", err)
+		}
+	}
+
+	// 年次集計を取得
+	summary, err := repo.GetYearlySummary(2024)
+	if err != nil {
+		t.Fatalf("Failed to get yearly summary: %v", err)
+	}
+
+	if summary.Year != 2024 {
+		t.Errorf("Expected year 2024, got %d", summary.Year)
+	}
+
+	if summary.Income != 600000 {
+		t.Errorf("Expected income 600000, got %d", summary.Income)
+	}
+
+	if summary.Expense != 250000 {
+		t.Errorf("Expected expense 250000, got %d", summary.Expense)
+	}
+
+	if summary.Balance != 350000 {
+		t.Errorf("Expected balance 350000, got %d", summary.Balance)
+	}
+
+	// 月別データの確認
+	if len(summary.Monthly) != 12 {
+		t.Errorf("Expected 12 monthly summaries, got %d", len(summary.Monthly))
+	}
+
+	// 1月のデータ
+	if summary.Monthly[0].Income != 300000 {
+		t.Errorf("Expected January income 300000, got %d", summary.Monthly[0].Income)
+	}
+
+	if summary.Monthly[0].Expense != 100000 {
+		t.Errorf("Expected January expense 100000, got %d", summary.Monthly[0].Expense)
+	}
+}
+
+func TestTransaction_TableName(t *testing.T) {
+	tx := Transaction{}
+	if tx.TableName() != "transactions" {
+		t.Errorf("Expected table name 'transactions', got '%s'", tx.TableName())
+	}
+}
