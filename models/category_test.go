@@ -183,7 +183,7 @@ func TestCategoryRepository_Delete(t *testing.T) {
 	}
 }
 
-func TestSeedDefaultCategories(t *testing.T) {
+func TestSeedDefaultCategories_InCategoryTest(t *testing.T) {
 	SetupTestDB(t)
 	defer TeardownTestDB(t)
 
@@ -216,5 +216,38 @@ func TestSeedDefaultCategories(t *testing.T) {
 
 	if len(categories2) != len(categories) {
 		t.Error("Second seed should not create duplicate categories")
+	}
+}
+
+func TestCategory_TableName(t *testing.T) {
+	category := Category{}
+	if category.TableName() != "categories" {
+		t.Errorf("Expected table name 'categories', got '%s'", category.TableName())
+	}
+}
+
+func TestCategoryRepository_GetByID_NotFound(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB(t)
+
+	user := CreateTestUser(t, "Test User", "test@example.com", "password123")
+	repo := NewCategoryRepository(user.ID)
+
+	_, err := repo.GetByID(99999)
+	if err == nil {
+		t.Error("Expected error for non-existent category ID, got nil")
+	}
+}
+
+func TestCategoryRepository_GetByName_NotFound(t *testing.T) {
+	SetupTestDB(t)
+	defer TeardownTestDB(t)
+
+	user := CreateTestUser(t, "Test User", "test@example.com", "password123")
+	repo := NewCategoryRepository(user.ID)
+
+	_, err := repo.GetByName("存在しないカテゴリ")
+	if err == nil {
+		t.Error("Expected error for non-existent category name, got nil")
 	}
 }
