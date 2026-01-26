@@ -82,39 +82,51 @@ func ValidateToken(tokenString string) (*Claims, error) {
 }
 
 // AuthRequired はJWT認証を要求するミドルウェア
+// 開発モード（GIN_MODE != release）では、X-User-IDヘッダーでの認証も許可
 func AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var userID uint
+		var email string
+
+		// JWTトークンの確認
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header is required",
-			})
-			c.Abort()
-			return
+		if authHeader != "" {
+			// "Bearer <token>" 形式からトークンを抽出
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				tokenString := parts[1]
+				claims, err := ValidateToken(tokenString)
+				if err == nil {
+					userID = claims.UserID
+					email = claims.Email
+				}
+			}
 		}
 
-		// "Bearer <token>" 形式からトークンを抽出
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid authorization header format",
-			})
-			c.Abort()
-			return
+		// 開発モードの場合、X-User-IDヘッダーをフォールバックとして許可
+		if userID == 0 && os.Getenv("GIN_MODE") != "release" {
+			if idStr := c.GetHeader("X-User-ID"); idStr != "" {
+				if id, err := strconv.ParseUint(idStr, 10, 32); err == nil {
+					// ユーザーが存在するか確認
+					if user, err := models.GetUserByID(uint(id)); err == nil {
+						userID = uint(id)
+						email = user.Email
+					}
+				}
+			}
 		}
 
-		tokenString := parts[1]
-		claims, err := ValidateToken(tokenString)
-		if err != nil {
+		// 認証情報がない場合はエラー
+		if userID == 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid or expired token",
+				"error": "Authorization required",
 			})
 			c.Abort()
 			return
 		}
 
 		// ユーザーDBを取得
-		db, err := models.GetUserDB(claims.UserID)
+		db, err := models.GetUserDB(userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user database"})
 			c.Abort()
@@ -122,8 +134,8 @@ func AuthRequired() gin.HandlerFunc {
 		}
 
 		// コンテキストにユーザー情報を設定
-		c.Set("userID", claims.UserID)
-		c.Set("email", claims.Email)
+		c.Set("userID", userID)
+		c.Set("email", email)
 		c.Set("userDB", db)
 
 		c.Next()
