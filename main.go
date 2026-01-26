@@ -53,27 +53,29 @@ func main() {
 		authRequired.PUT("/password", handlers.ChangePassword)
 	}
 
-	// その他のAPIエンドポイント（開発用：UserContext使用）
-	v1.Use(middleware.UserContext())
+	// 認証が必要なAPIエンドポイント
+	// 本番: JWT認証必須、開発: X-User-IDヘッダーも許可
+	api := v1.Group("")
+	api.Use(middleware.AuthRequired())
 	{
 		// Transactions
-		v1.GET("/transactions", handlers.ListTransactions)
-		v1.POST("/transactions", handlers.CreateTransaction)
-		v1.GET("/transactions/:id", handlers.GetTransaction)
-		v1.PUT("/transactions/:id", handlers.UpdateTransaction)
-		v1.DELETE("/transactions/:id", handlers.DeleteTransaction)
+		api.GET("/transactions", handlers.ListTransactions)
+		api.POST("/transactions", handlers.CreateTransaction)
+		api.GET("/transactions/:id", handlers.GetTransaction)
+		api.PUT("/transactions/:id", handlers.UpdateTransaction)
+		api.DELETE("/transactions/:id", handlers.DeleteTransaction)
 
 		// Categories
-		v1.GET("/categories", handlers.ListCategories)
-		v1.POST("/categories", handlers.CreateCategory)
+		api.GET("/categories", handlers.ListCategories)
+		api.POST("/categories", handlers.CreateCategory)
 
 		// Summary
-		v1.GET("/summary/monthly", handlers.GetMonthlySummary)
-		v1.GET("/summary/category", handlers.GetCategorySummary)
-		v1.GET("/summary/yearly", handlers.GetYearlySummary)
+		api.GET("/summary/monthly", handlers.GetMonthlySummary)
+		api.GET("/summary/category", handlers.GetCategorySummary)
+		api.GET("/summary/yearly", handlers.GetYearlySummary)
 
 		// Export
-		v1.GET("/export/csv", handlers.ExportCSV)
+		api.GET("/export/csv", handlers.ExportCSV)
 	}
 
 	// ポート設定
