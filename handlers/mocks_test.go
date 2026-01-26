@@ -285,3 +285,96 @@ func (m *MockTokenValidator) Validate(tokenString string) (*middleware.Claims, e
 	}
 	return m.Claims, nil
 }
+
+// MockCategoryRepository はテスト用のカテゴリリポジトリモック
+type MockCategoryRepository struct {
+	Categories   map[uint]*models.Category
+	NextID       uint
+	CreateErr    error
+	GetByIDErr   error
+	ListErr      error
+	UpdateErr    error
+	DeleteErr    error
+	GetByNameErr error
+}
+
+// NewMockCategoryRepository は新しいモックリポジトリを作成する
+func NewMockCategoryRepository() *MockCategoryRepository {
+	return &MockCategoryRepository{
+		Categories: make(map[uint]*models.Category),
+		NextID:     1,
+	}
+}
+
+func (m *MockCategoryRepository) Create(c *models.Category) error {
+	if m.CreateErr != nil {
+		return m.CreateErr
+	}
+	c.ID = m.NextID
+	c.CreatedAt = time.Now()
+	m.Categories[c.ID] = c
+	m.NextID++
+	return nil
+}
+
+func (m *MockCategoryRepository) GetByID(id uint) (*models.Category, error) {
+	if m.GetByIDErr != nil {
+		return nil, m.GetByIDErr
+	}
+	c, ok := m.Categories[id]
+	if !ok {
+		return nil, errors.New("category not found")
+	}
+	return c, nil
+}
+
+func (m *MockCategoryRepository) List(categoryType string) ([]models.Category, error) {
+	if m.ListErr != nil {
+		return nil, m.ListErr
+	}
+
+	var result []models.Category
+	for _, c := range m.Categories {
+		if categoryType == "" || c.Type == categoryType {
+			result = append(result, *c)
+		}
+	}
+	return result, nil
+}
+
+func (m *MockCategoryRepository) GetByName(name string) (*models.Category, error) {
+	if m.GetByNameErr != nil {
+		return nil, m.GetByNameErr
+	}
+	for _, c := range m.Categories {
+		if c.Name == name {
+			return c, nil
+		}
+	}
+	return nil, errors.New("category not found")
+}
+
+func (m *MockCategoryRepository) Update(c *models.Category) error {
+	if m.UpdateErr != nil {
+		return m.UpdateErr
+	}
+	m.Categories[c.ID] = c
+	return nil
+}
+
+func (m *MockCategoryRepository) Delete(id uint) error {
+	if m.DeleteErr != nil {
+		return m.DeleteErr
+	}
+	delete(m.Categories, id)
+	return nil
+}
+
+// AddCategory はテスト用にカテゴリを追加する
+func (m *MockCategoryRepository) AddCategory(c *models.Category) {
+	if c.ID == 0 {
+		c.ID = m.NextID
+		m.NextID++
+	}
+	m.Categories[c.ID] = c
+}
