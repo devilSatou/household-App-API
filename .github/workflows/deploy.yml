@@ -25,7 +25,6 @@ jobs:
       contents: read
       id-token: write
 
-    # 環境の自動判定: main→production, develop→staging, 手動→選択した環境
     env:
       DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
 
@@ -33,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set service name
+      - name: Set deploy config
         id: config
         run: |
           if [ "${{ env.DEPLOY_ENV }}" = "production" ]; then
@@ -41,7 +40,6 @@ jobs:
           else
             echo "SERVICE_NAME=household-app-stg" >> $GITHUB_OUTPUT
           fi
-          echo "Deploying to: ${{ env.DEPLOY_ENV }} (${{ steps.config.outputs.SERVICE_NAME || 'resolving...' }})"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -49,10 +47,24 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: ${{ steps.config.outputs.SERVICE_NAME }}
-          source: .
-          region: ${{ env.REGION }}
-          flags: '--allow-unauthenticated'
+        run: |
+          if [ "${{ env.DEPLOY_ENV }}" = "production" ]; then
+            gcloud run deploy ${{ steps.config.outputs.SERVICE_NAME }} \
+              --source . \
+              --region ${{ env.REGION }} \
+              --allow-unauthenticated \
+              --max-instances=1 \
+              --add-volume=name=gcs-data,type=cloud-storage,bucket=household-app-litestream-backup \
+              --add-volume-mount=volume=gcs-data,mount-path=/app/data \
+              --execution-environment=gen2 \
+              --set-env-vars=DB_PATH=/app/data/app.db,USER_DB_BASE_PATH=/app/data/users
+          else
+            gcloud run deploy ${{ steps.config.outputs.SERVICE_NAME }} \
+              --source . \
+              --region ${{ env.REGION }} \
+              --allow-unauthenticated
+          fi
