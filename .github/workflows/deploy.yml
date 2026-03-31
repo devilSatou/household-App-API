@@ -2,13 +2,21 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: asia-northeast1
-  SERVICE_NAME: household-app
 
 jobs:
   deploy:
@@ -17,9 +25,23 @@ jobs:
       contents: read
       id-token: write
 
+    # 環境の自動判定: main→production, develop→staging, 手動→選択した環境
+    env:
+      DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set service name
+        id: config
+        run: |
+          if [ "${{ env.DEPLOY_ENV }}" = "production" ]; then
+            echo "SERVICE_NAME=household-app" >> $GITHUB_OUTPUT
+          else
+            echo "SERVICE_NAME=household-app-stg" >> $GITHUB_OUTPUT
+          fi
+          echo "Deploying to: ${{ env.DEPLOY_ENV }} (${{ steps.config.outputs.SERVICE_NAME || 'resolving...' }})"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -30,6 +52,7 @@ jobs:
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.SERVICE_NAME }}
+          service: ${{ steps.config.outputs.SERVICE_NAME }}
           source: .
           region: ${{ env.REGION }}
+          flags: '--allow-unauthenticated'
