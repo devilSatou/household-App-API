@@ -51,6 +51,8 @@ POST   /api/v1/auth/login            # ログイン
 GET    /api/v1/auth/me               # プロファイル取得（要認証）
 PUT    /api/v1/auth/me               # プロファイル更新（要認証）
 PUT    /api/v1/auth/password         # パスワード変更（要認証）
+POST   /api/v1/auth/password-reset          # パスワードリセット要求
+POST   /api/v1/auth/password-reset/confirm  # パスワードリセット実行
 
 # 収支記録（Transactions）※開発環境ではX-User-IDヘッダーで認証可
 GET    /api/v1/transactions          # 一覧（ページネーション対応）

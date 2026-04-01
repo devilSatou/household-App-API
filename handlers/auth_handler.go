@@ -188,6 +188,106 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	})
 }
 
+// RequestPasswordReset はパスワードリセットトークンを発行する
+func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
+	var req PasswordResetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	user, err := h.userRepo.GetByEmail(req.Email)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "If the email is registered, a password reset token has been issued",
+		})
+		return
+	}
+
+	models.InvalidateTokensForUser(user.ID)
+
+	resetToken, err := models.CreatePasswordResetToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create reset token",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "If the email is registered, a password reset token has been issued",
+		"reset_token": resetToken.Token,
+		"expires_at":  resetToken.ExpiresAt,
+	})
+}
+
+// ConfirmPasswordReset はトークンを使ってパスワードをリセットする
+func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
+	var req PasswordResetConfirmRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	resetToken, err := models.GetPasswordResetTokenByToken(req.Token)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid or expired token",
+		})
+		return
+	}
+
+	if resetToken.IsUsed() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Token has already been used",
+		})
+		return
+	}
+
+	if resetToken.IsExpired() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Token has expired",
+		})
+		return
+	}
+
+	user, err := h.userRepo.GetByID(resetToken.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	if err := user.SetPassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to hash password",
+		})
+		return
+	}
+
+	if err := h.userRepo.Update(user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update password",
+		})
+		return
+	}
+
+	if err := resetToken.MarkAsUsed(); err != nil {
+		_ = err
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password has been reset successfully",
+	})
+}
+
 // ChangePassword は現在のユーザーのパスワードを変更する
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)

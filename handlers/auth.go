@@ -194,6 +194,131 @@ func UpdateProfile(c *gin.Context) {
 	})
 }
 
+// PasswordResetRequest はパスワードリセットリクエストの構造体
+type PasswordResetRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// PasswordResetConfirmRequest はパスワードリセット確認リクエストの構造体
+type PasswordResetConfirmRequest struct {
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=8"`
+}
+
+// RequestPasswordReset はパスワードリセットトークンを発行する
+// POST /api/v1/auth/password-reset
+func RequestPasswordReset(c *gin.Context) {
+	var req PasswordResetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// メールアドレスを小文字に正規化
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	// ユーザーを検索
+	user, err := models.GetUserByEmail(req.Email)
+	if err != nil {
+		// セキュリティ: ユーザーが存在しない場合も同じレスポンスを返す
+		c.JSON(http.StatusOK, gin.H{
+			"message": "If the email is registered, a password reset token has been issued",
+		})
+		return
+	}
+
+	// 既存の未使用トークンを無効化
+	models.InvalidateTokensForUser(user.ID)
+
+	// 新しいリセットトークンを作成
+	resetToken, err := models.CreatePasswordResetToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create reset token",
+		})
+		return
+	}
+
+	// NOTE: 本番環境ではトークンをメールで送信し、レスポンスには含めない
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "If the email is registered, a password reset token has been issued",
+		"reset_token": resetToken.Token,
+		"expires_at":  resetToken.ExpiresAt,
+	})
+}
+
+// ConfirmPasswordReset はトークンを使ってパスワードをリセットする
+// POST /api/v1/auth/password-reset/confirm
+func ConfirmPasswordReset(c *gin.Context) {
+	var req PasswordResetConfirmRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// トークンを検索
+	resetToken, err := models.GetPasswordResetTokenByToken(req.Token)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid or expired token",
+		})
+		return
+	}
+
+	// トークンの有効性チェック
+	if resetToken.IsUsed() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Token has already been used",
+		})
+		return
+	}
+
+	if resetToken.IsExpired() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Token has expired",
+		})
+		return
+	}
+
+	// ユーザーを取得
+	user, err := models.GetUserByID(resetToken.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
+	// パスワードを更新
+	if err := user.SetPassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to hash password",
+		})
+		return
+	}
+
+	if err := user.Update(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update password",
+		})
+		return
+	}
+
+	// トークンを使用済みにする
+	if err := resetToken.MarkAsUsed(); err != nil {
+		// パスワードは更新済みなのでエラーはログのみ
+		_ = err
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password has been reset successfully",
+	})
+}
+
 // ChangePasswordRequest はパスワード変更リクエストの構造体
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password" binding:"required"`

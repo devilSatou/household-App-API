@@ -42,6 +42,8 @@ func main() {
 	{
 		auth.POST("/register", handlers.Register)
 		auth.POST("/login", handlers.Login)
+		auth.POST("/password-reset", handlers.RequestPasswordReset)
+		auth.POST("/password-reset/confirm", handlers.ConfirmPasswordReset)
 	}
 
 	// 認証が必要な認証エンドポイント
