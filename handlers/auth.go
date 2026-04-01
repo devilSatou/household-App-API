@@ -147,7 +147,8 @@ func GetProfile(c *gin.Context) {
 
 // UpdateProfileRequest はプロファイル更新リクエストの構造体
 type UpdateProfileRequest struct {
-	Name string `json:"name" binding:"omitempty"`
+	Name  string `json:"name" binding:"omitempty"`
+	Email string `json:"email" binding:"omitempty,email"`
 }
 
 // UpdateProfile は現在のユーザー情報を更新する
@@ -182,6 +183,21 @@ func UpdateProfile(c *gin.Context) {
 		user.Name = strings.TrimSpace(req.Name)
 	}
 
+	// メールアドレスを更新
+	if req.Email != "" {
+		newEmail := strings.ToLower(strings.TrimSpace(req.Email))
+		if newEmail != user.Email {
+			// 重複チェック
+			if existing, _ := models.GetUserByEmail(newEmail); existing != nil {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "Email already in use",
+				})
+				return
+			}
+			user.Email = newEmail
+		}
+	}
+
 	if err := user.Update(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update user",
@@ -197,6 +213,7 @@ func UpdateProfile(c *gin.Context) {
 // PasswordResetRequest はパスワードリセットリクエストの構造体
 type PasswordResetRequest struct {
 	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required"`
 }
 
 // PasswordResetConfirmRequest はパスワードリセット確認リクエストの構造体
@@ -223,6 +240,15 @@ func RequestPasswordReset(c *gin.Context) {
 	user, err := models.GetUserByEmail(req.Email)
 	if err != nil {
 		// セキュリティ: ユーザーが存在しない場合も同じレスポンスを返す
+		c.JSON(http.StatusOK, gin.H{
+			"message": "If the email is registered, a password reset token has been issued",
+		})
+		return
+	}
+
+	// 本人確認: 登録名の一致を検証
+	if strings.TrimSpace(req.Name) != user.Name {
+		// セキュリティ: 名前が一致しない場合も同じレスポンスを返す
 		c.JSON(http.StatusOK, gin.H{
 			"message": "If the email is registered, a password reset token has been issued",
 		})

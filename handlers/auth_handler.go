@@ -176,6 +176,20 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		user.Name = strings.TrimSpace(req.Name)
 	}
 
+	// メールアドレスを更新
+	if req.Email != "" {
+		newEmail := strings.ToLower(strings.TrimSpace(req.Email))
+		if newEmail != user.Email {
+			if existing, _ := h.userRepo.GetByEmail(newEmail); existing != nil {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "Email already in use",
+				})
+				return
+			}
+			user.Email = newEmail
+		}
+	}
+
 	if err := h.userRepo.Update(user); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to update user",
@@ -202,6 +216,14 @@ func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
 
 	user, err := h.userRepo.GetByEmail(req.Email)
 	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "If the email is registered, a password reset token has been issued",
+		})
+		return
+	}
+
+	// 本人確認: 登録名の一致を検証
+	if strings.TrimSpace(req.Name) != user.Name {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "If the email is registered, a password reset token has been issued",
 		})
