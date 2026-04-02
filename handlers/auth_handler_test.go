@@ -851,3 +851,442 @@ func TestAuthHandler_ChangePassword(t *testing.T) {
 		}
 	})
 }
+
+// TestAuthHandler_UpdateProfile_Email はメールアドレス更新の単体テスト
+func TestAuthHandler_UpdateProfile_Email(t *testing.T) {
+	t.Run("successful email update", func(t *testing.T) {
+		mockUserRepo := NewMockUserRepository()
+		mockTokenGen := NewMockTokenGenerator()
+		handler := NewAuthHandler(mockUserRepo, mockTokenGen)
+
+		user := &models.User{
+			ID:    1,
+			Name:  "Test User",
+			Email: "test@example.com",
+		}
+		mockUserRepo.AddUser(user)
+
+		router := setupTestRouter()
+		router.PUT("/api/v1/auth/me", func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		}, handler.UpdateProfile)
+
+		reqBody := UpdateProfileRequest{
+			Email: "new@example.com",
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest("PUT", "/api/v1/auth/me", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
+		}
+
+		var response map[string]*models.User
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+
+		if response["user"].Email != "new@example.com" {
+			t.Errorf("Expected email 'new@example.com', got '%s'", response["user"].Email)
+		}
+	})
+
+	t.Run("duplicate email", func(t *testing.T) {
+		mockUserRepo := NewMockUserRepository()
+		mockTokenGen := NewMockTokenGenerator()
+		handler := NewAuthHandler(mockUserRepo, mockTokenGen)
+
+		user1 := &models.User{
+			ID:    1,
+			Name:  "User 1",
+			Email: "user1@example.com",
+		}
+		user2 := &models.User{
+			ID:    2,
+			Name:  "User 2",
+			Email: "user2@example.com",
+		}
+		mockUserRepo.AddUser(user1)
+		mockUserRepo.AddUser(user2)
+
+		router := setupTestRouter()
+		router.PUT("/api/v1/auth/me", func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		}, handler.UpdateProfile)
+
+		reqBody := UpdateProfileRequest{
+			Email: "user2@example.com",
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest("PUT", "/api/v1/auth/me", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusConflict {
+			t.Errorf("Expected status %d, got %d", http.StatusConflict, w.Code)
+		}
+	})
+
+	t.Run("same email - no change", func(t *testing.T) {
+		mockUserRepo := NewMockUserRepository()
+		mockTokenGen := NewMockTokenGenerator()
+		handler := NewAuthHandler(mockUserRepo, mockTokenGen)
+
+		user := &models.User{
+			ID:    1,
+			Name:  "Test User",
+			Email: "test@example.com",
+		}
+		mockUserRepo.AddUser(user)
+
+		router := setupTestRouter()
+		router.PUT("/api/v1/auth/me", func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		}, handler.UpdateProfile)
+
+		reqBody := UpdateProfileRequest{
+			Email: "test@example.com",
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest("PUT", "/api/v1/auth/me", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+	})
+
+	t.Run("update both name and email", func(t *testing.T) {
+		mockUserRepo := NewMockUserRepository()
+		mockTokenGen := NewMockTokenGenerator()
+		handler := NewAuthHandler(mockUserRepo, mockTokenGen)
+
+		user := &models.User{
+			ID:    1,
+			Name:  "Test User",
+			Email: "test@example.com",
+		}
+		mockUserRepo.AddUser(user)
+
+		router := setupTestRouter()
+		router.PUT("/api/v1/auth/me", func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		}, handler.UpdateProfile)
+
+		reqBody := UpdateProfileRequest{
+			Name:  "Updated Name",
+			Email: "updated@example.com",
+		}
+
+		body, _ := json.Marshal(reqBody)
+		req, _ := http.NewRequest("PUT", "/api/v1/auth/me", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
+		}
+
+		var response map[string]*models.User
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+
+		if response["user"].Name != "Updated Name" {
+			t.Errorf("Expected name 'Updated Name', got '%s'", response["user"].Name)
+		}
+
+		if response["user"].Email != "updated@example.com" {
+			t.Errorf("Expected email 'updated@example.com', got '%s'", response["user"].Email)
+		}
+	})
+
+	t.Run("invalid email format", func(t *testing.T) {
+		mockUserRepo := NewMockUserRepository()
+		mockTokenGen := NewMockTokenGenerator()
+		handler := NewAuthHandler(mockUserRepo, mockTokenGen)
+
+		user := &models.User{
+			ID:    1,
+			Name:  "Test User",
+			Email: "test@example.com",
+		}
+		mockUserRepo.AddUser(user)
+
+		router := setupTestRouter()
+		router.PUT("/api/v1/auth/me", func(c *gin.Context) {
+			c.Set("userID", uint(1))
+			c.Next()
+		}, handler.UpdateProfile)
+
+		body := []byte(`{"email": "not-an-email"}`)
+		req, _ := http.NewRequest("PUT", "/api/v1/auth/me", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
+
+// TestPasswordReset_Integration はパスワードリセットの統合テスト
+func TestPasswordReset_Integration(t *testing.T) {
+	t.Run("successful password reset flow", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		// ユーザーを作成
+		user := models.CreateTestUser(t, "Test User", "test@example.com", "oldpassword123")
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset", RequestPasswordReset)
+		router.POST("/api/v1/auth/password-reset/confirm", ConfirmPasswordReset)
+		router.POST("/api/v1/auth/login", Login)
+
+		// Step 1: パスワードリセットをリクエスト
+		resetReqBody, _ := json.Marshal(PasswordResetRequest{
+			Email: "test@example.com",
+			Name:  "Test User",
+		})
+		resetReq, _ := http.NewRequest("POST", "/api/v1/auth/password-reset", bytes.NewBuffer(resetReqBody))
+		resetReq.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, resetReq)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
+		}
+
+		var resetResponse map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resetResponse); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+
+		token, ok := resetResponse["reset_token"].(string)
+		if !ok || token == "" {
+			t.Fatal("reset_token should be present in response")
+		}
+
+		// Step 2: トークンで新パスワードを設定
+		confirmReqBody, _ := json.Marshal(PasswordResetConfirmRequest{
+			Token:       token,
+			NewPassword: "newpassword456",
+		})
+		confirmReq, _ := http.NewRequest("POST", "/api/v1/auth/password-reset/confirm", bytes.NewBuffer(confirmReqBody))
+		confirmReq.Header.Set("Content-Type", "application/json")
+
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, confirmReq)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
+		}
+
+		// Step 3: 新しいパスワードでログインできることを確認
+		loginReqBody, _ := json.Marshal(LoginRequest{
+			Email:    "test@example.com",
+			Password: "newpassword456",
+		})
+		loginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", bytes.NewBuffer(loginReqBody))
+		loginReq.Header.Set("Content-Type", "application/json")
+
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, loginReq)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected login with new password to succeed, got status %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		// Step 4: 古いパスワードではログインできないことを確認
+		oldLoginReqBody, _ := json.Marshal(LoginRequest{
+			Email:    "test@example.com",
+			Password: "oldpassword123",
+		})
+		oldLoginReq, _ := http.NewRequest("POST", "/api/v1/auth/login", bytes.NewBuffer(oldLoginReqBody))
+		oldLoginReq.Header.Set("Content-Type", "application/json")
+
+		w = httptest.NewRecorder()
+		router.ServeHTTP(w, oldLoginReq)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected old password login to fail with %d, got %d", http.StatusUnauthorized, w.Code)
+		}
+
+		_ = user // suppress unused warning
+	})
+
+	t.Run("wrong name - no token issued", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		models.CreateTestUser(t, "Test User", "test@example.com", "password123")
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset", RequestPasswordReset)
+
+		reqBody, _ := json.Marshal(PasswordResetRequest{
+			Email: "test@example.com",
+			Name:  "Wrong Name",
+		})
+		req, _ := http.NewRequest("POST", "/api/v1/auth/password-reset", bytes.NewBuffer(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if _, exists := response["reset_token"]; exists {
+			t.Error("reset_token should NOT be present when name doesn't match")
+		}
+	})
+
+	t.Run("non-existent email - same response", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset", RequestPasswordReset)
+
+		reqBody, _ := json.Marshal(PasswordResetRequest{
+			Email: "nonexistent@example.com",
+			Name:  "Nobody",
+		})
+		req, _ := http.NewRequest("POST", "/api/v1/auth/password-reset", bytes.NewBuffer(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if _, exists := response["reset_token"]; exists {
+			t.Error("reset_token should NOT be present for non-existent email")
+		}
+	})
+
+	t.Run("invalid request - missing fields", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset", RequestPasswordReset)
+
+		reqBody, _ := json.Marshal(map[string]string{
+			"email": "test@example.com",
+		})
+		req, _ := http.NewRequest("POST", "/api/v1/auth/password-reset", bytes.NewBuffer(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	t.Run("confirm - invalid token", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset/confirm", ConfirmPasswordReset)
+
+		reqBody, _ := json.Marshal(PasswordResetConfirmRequest{
+			Token:       "invalid-token",
+			NewPassword: "newpassword456",
+		})
+		req, _ := http.NewRequest("POST", "/api/v1/auth/password-reset/confirm", bytes.NewBuffer(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	t.Run("confirm - used token", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		user := models.CreateTestUser(t, "Test User", "test@example.com", "password123")
+
+		// トークンを作成して使用済みにする
+		resetToken, _ := models.CreatePasswordResetToken(user.ID)
+		resetToken.MarkAsUsed()
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset/confirm", ConfirmPasswordReset)
+
+		reqBody, _ := json.Marshal(PasswordResetConfirmRequest{
+			Token:       resetToken.Token,
+			NewPassword: "newpassword456",
+		})
+		req, _ := http.NewRequest("POST", "/api/v1/auth/password-reset/confirm", bytes.NewBuffer(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+
+	t.Run("confirm - short password", func(t *testing.T) {
+		models.SetupTestDB(t)
+		defer models.TeardownTestDB(t)
+
+		router := setupTestRouter()
+		router.POST("/api/v1/auth/password-reset/confirm", ConfirmPasswordReset)
+
+		reqBody, _ := json.Marshal(PasswordResetConfirmRequest{
+			Token:       "some-token",
+			NewPassword: "short",
+		})
+		req, _ := http.NewRequest("POST", "/api/v1/auth/password-reset/confirm", bytes.NewBuffer(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
+}
