@@ -195,6 +195,7 @@ curl http://localhost:8080/api/v1/auth/me \
 | フィールド | 型 | 必須 | 説明 |
 |------------|------|------|------|
 | `name` | string | 任意 | ユーザー名 |
+| `email` | string | 任意 | メールアドレス（一意である必要がある） |
 
 **リクエスト例**:
 ```bash
@@ -202,7 +203,8 @@ curl -X PUT http://localhost:8080/api/v1/auth/me \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
   -d '{
-    "name": "山田花子"
+    "name": "山田花子",
+    "email": "hanako@example.com"
   }'
 ```
 
@@ -252,6 +254,74 @@ curl -X PUT http://localhost:8080/api/v1/auth/password \
   "message": "Password changed successfully"
 }
 ```
+
+---
+
+### POST /api/v1/auth/password-reset
+
+パスワードリセット用のトークンを発行します（認証不要）。
+メールアドレスと登録名の両方が一致した場合のみトークンが発行されます。
+
+**リクエストボディ**:
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `email` | string | 必須 | 登録メールアドレス |
+| `name` | string | 必須 | 登録名（本人確認用） |
+
+**リクエスト例**:
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/password-reset \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "name": "山田太郎"
+  }'
+```
+
+**レスポンス例** (200 OK):
+```json
+{
+  "message": "If the email is registered, a password reset token has been issued",
+  "reset_token": "a1b2c3d4e5f6...",
+  "expires_at": "2024-01-15T13:00:00Z"
+}
+```
+
+> **NOTE**: セキュリティ上、メールアドレスが存在しない場合や名前が不一致の場合も同じ `message` を返します。トークンが発行されない場合は `reset_token` と `expires_at` は含まれません。
+
+---
+
+### POST /api/v1/auth/password-reset/confirm
+
+リセットトークンを使って新しいパスワードを設定します（認証不要）。
+
+**リクエストボディ**:
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `token` | string | 必須 | パスワードリセットトークン |
+| `new_password` | string | 必須 | 新しいパスワード（8文字以上） |
+
+**リクエスト例**:
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/password-reset/confirm \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "a1b2c3d4e5f6...",
+    "new_password": "newsecurepass456"
+  }'
+```
+
+**レスポンス例** (200 OK):
+```json
+{
+  "message": "Password has been reset successfully"
+}
+```
+
+**エラーレスポンス例**:
+- `400`: トークンが無効、使用済み、または期限切れ
 
 ---
 

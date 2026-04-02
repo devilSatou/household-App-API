@@ -40,7 +40,7 @@ func GetAppDB() (*gorm.DB, error) {
 		}
 
 		// マイグレーション（共通テーブル）
-		err = appDB.AutoMigrate(&User{})
+		err = appDB.AutoMigrate(&User{}, &PasswordResetToken{})
 	})
 
 	return appDB, err
