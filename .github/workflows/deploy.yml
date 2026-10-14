@@ -1,8 +1,7 @@
 name: Deploy to Cloud Run
 
+# GCP環境は停止済みのため、pushでの自動デプロイは無効化（手動実行のみ）
 on:
-  push:
-    branches: [main, develop]
   workflow_dispatch:
     inputs:
       environment:
